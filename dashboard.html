@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>스마트 우편함 모니터링 시스템</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f7f6; }
+        .dashboard { display: flex; flex-direction: column; gap: 20px; max-width: 800px; margin: auto; }
+        h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        .card { 
+            background-color: #fff; 
+            border: 1px solid #e0e0e0; 
+            padding: 20px; 
+            border-radius: 10px; 
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        #alert_status { 
+            font-size: 1.5em; 
+            font-weight: bold; 
+            padding: 15px; 
+            border-radius: 8px; 
+            text-align: center; 
+            margin-top: 10px;
+        }
+        .status-normal { background-color: #d4edda; color: #155724; border: 2px solid #c3e6cb; }
+        .status-alert { background-color: #f8d7da; color: #721c24; border: 2px solid #f5c6cb; }
+        .data-label { font-weight: bold; display: inline-block; width: 150px; }
+        /* 추가: 메시지 표시 영역 (alert() 대체) */
+        #message_feedback {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #d9534f;
+        }
+    </style>
+</head>
+<body>
+    <h1>📦 스마트 우편함 대시보드</h1>
+    <div class="dashboard">
+        
+        <div class="card">
+            <h2>🚨 우편함 상태 알림</h2>
+            <div id="alert_status" class="status-normal">
+                <p>우편물 대기 중</p>
+            </div>
+            <div style="text-align: center; margin-top: 15px;">
+                <button id="resetButton" style="padding: 10px 20px; font-size: 1em; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; transition: background-color 0.3s;">
+                    ✅ 우편물 확인 완료
+                </button>
+            </div>
+            <div id="message_feedback"></div>
+        </div>
+        
+        <div class="card">
+            <h2>📊 실시간 센서 데이터</h2>
+            <div id="sensor_data_instant">
+                <p>데이터 로드 중...</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // --- 3-1. 데이터 업데이트 함수 ---
+        function updateData() {
+            fetch('/api/data')
+                .then(response => response.json())
+                .then(data => {
+                    // 센서 데이터 업데이트
+                    document.getElementById('sensor_data_instant').innerHTML = `
+                        <p><span class="data-label">거리:</span> <strong>${data.sensor.distance.toFixed(1)} cm</strong></p>
+                        <p><span class="data-label">조도:</span> ${data.sensor.lux_adc}</p>
+                        <p><span class="data-label">온도/습도:</span> ${data.sensor.temperature.toFixed(1)}°C / ${data.sensor.humidity.toFixed(1)}%</p>
+                        <p><span class="data-label">최신 업데이트:</span> ${data.sensor.timestamp}</p>
+                    `;
+                    
+                    // 경고 상태 업데이트
+                    const alertDiv = document.getElementById('alert_status');
+                    alertDiv.innerHTML = `<p>${data.alert}</p>`;
+                    
+                    // 상태 코드에 따른 배경색 변경
+                    if (data.status_code !== 1) {
+                        alertDiv.className = 'status-alert';
+                    } else {
+                        alertDiv.className = 'status-normal';
+                    }
+                })
+                .catch(error => console.error('Error fetching data:', error));
+        }
+        
+        // --- 3-2. 제어 명령 전송 함수 (Day 8 핵심: alert 제거) ---
+        document.getElementById('resetButton').addEventListener('click', function() {
+            const button = this;
+            const originalText = button.innerText;
+            const feedbackDiv = document.getElementById('message_feedback');
+            feedbackDiv.innerText = ''; 
+
+            button.disabled = true;
+            button.innerText = '🔄 명령 전송 중...';
+
+            fetch('/control/reset', {
+                method: 'POST'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    // 서버에서 500 오류가 발생하면 JSON 응답을 받아 에러 메시지를 표시
+                    return response.json().then(err => { 
+                        throw new Error(err.message || '서버 응답 오류'); 
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('명령 전송됨: ' + data.message);
+                button.innerText = '✅ 전송 완료!';
+                feedbackDiv.innerText = data.message;
+                feedbackDiv.style.color = '#155724';
+                updateData(); // 즉시 데이터 새로고침
+            })
+            .catch(error => {
+                console.error('제어 명령 전송 오류:', error);
+                feedbackDiv.innerText = `오류: ${error.message || '전송에 실패했습니다.'}`;
+                feedbackDiv.style.color = '#d9534f';
+                button.innerText = '❌ 오류 발생';
+            })
+            .finally(() => {
+                // 1.5초 후 버튼 복구
+                setTimeout(() => {
+                    button.disabled = false;
+                    button.innerText = originalText;
+                    feedbackDiv.innerText = '';
+                }, 1500);
+            });
+        });
+     
+        // 1초마다 데이터를 업데이트합니다.
+        setInterval(updateData, 500);
+        updateData(); // 초기 로드
+    </script>
+</body>
+</html>
